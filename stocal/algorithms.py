@@ -990,7 +990,7 @@ class CaoMethod(DirectMethod):
         return g
 
 
-if sys.argv[0].endswith('stocal/examples/validation.py'):
+if sys.argv[0].endswith('stocal/examples/validation.py') or sys.argv[0].endswith('stocal/examples/benchmarking.py'):
     # Provide some specialized CaoMethod samplers with fixed epsilon values
 
     class CaoMethod_003(CaoMethod):

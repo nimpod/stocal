@@ -78,6 +78,72 @@ absolute minimum to be run regularly in conjunction with unit test,
 and n=100,000 or n=1,000,000 for a thorough statistical analysis.
 
 
+Benchmarking
+--------
+Stocal provides a benchmarking suite for stochastic simulation algorithms.
+The models used for testing are based on the 'Discrete Stochastic Simulation Model Test Suite' (DSMTS) <https://github.com/sbmlteam/sbml-test-suite/blob/master/cases/stochastic/README.md>
+Some additional models for testing are provided under the 'Miscellaneous Models Test Suite' (MMTS)
+Ensure when you are running commands that your current dierctory is the top level parent directory of stocal (/stocal), and not the stocal directory below this (/stocal/stocal)
+The benchmarking suite operates in two modes: {run,report}
+
+{run} mode:
+	To run the benchmarking on all algorithms against all models for N simulations, call:
+		$ python stocal/examples/benchmarking.py run N
+
+	Any combination of algorithms and models can be benchmarked:
+		$ python stocal/examples/benchmarking.py run --model stocal.examples.dsmts.models.DSMTS_001_01 N
+		$ python stocal/examples/benchmarking.py run --model stocal.examples.dsmts.models.DSMTS_001_01 --model stocal.examples.dsmts.models.DSMTS_001_03 N
+		$ python stocal/examples/benchmarking.py run --model stocal.examples.dsmts.models.DSMTS_001_01 --model stocal.examples.dsmts.models.DSMTS_001_03 --model stocal.examples.dsmts.models.DSMTS_001_05 N
+		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod N
+		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod --algo stocal.algorithms.FirstReactionMethod N
+		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod --algo stocal.algorithms.FirstReactionMethod --algo stocal.algorithms.NextReactionMethod N
+		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod --algo stocal.algorithms.FirstReactionMethod --model stocal.examples.dsmts.models.DSMTS_001_01 --model stocal.examples.dsmts.models.DSMTS_001_03 N
+
+	Optional arguments:
+		--ts {...} allows the user to specify a test suite, pulling all the models from that test suite into their analysis
+			DSMTS: only use models from the DSMTS module
+			MMTS: only use models from the MMTS module
+			ALL: use every model from all the test suites
+
+		--model {...} allows the user to specify a particular model to use.
+			stocal.examples.dsmts.models.DSMTS_001_01: only generate data for the DSMTS_001_01 model
+
+		--algo {...} allows the user to specify a particular algorithm to use.
+			stocal.algorithms.CaoMethod: only generate data for the CaoMethod alg
+
+	 	--cpu {...} allows the user to run the simulations parallely across multiple cores. This can speed up the overall waiting time significantly.
+			1: run simulations sequentially (default)
+			8: run simulations parallely across 8 cores
+
+		--debugmode {...} allows the user to view different information during the simulations.
+			1: show numerical progression (default)
+			2: show progress bar
+			3: show details of each simulation
+			4: show nothing
+
+{report} mode:
+	To generate results from the simulation data, call:
+		$ python stocal/examples/benchmarking.py report
+
+	To generate a LaTeX report from the results, call:
+		$ pdflatex {REPORTFILE}.tex
+		*** Note: you must have TeX Live installed on your system. <https://tug.org/texlive/>. ***
+
+	Optional arguments:
+		--file {...} allows the user to choose a file name for the generated report
+
+
+Global arguments:
+	--dir allows the user to specify a directory to hold generated files
+		$ python stocal/examples/benchmarking.py --dir {fpath} run N
+		$ python stocal/examples/benchmarking.py --dir {fpath} report
+
+	-h or --help provides more info about a specific command
+		$ python stocal/examples/benchmarking.py -h
+
+The DSMTS user guide recommends N=1,000 as an absolute minimum to be run regularly in conjunction with unit test, and N=100,000 or N=1,000,000 for a thorough statistical analysis.
+
+
 Releases
 --------
 Stocal uses semantic versioning based on its `public API <api.html>`_.

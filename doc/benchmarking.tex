@@ -1,0 +1,35 @@
+\documentclass[notitlepage]{revtex4-1}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\graphicspath{{benchmarking_data/1.1.2-64-g0d0fc6f/}}
+
+\begin{document}
+\title{Benchmarking results for \textit{stocal} samplers}
+\author{version: \VAR{version}}
+\maketitle{}
+
+For each algorithm and model, figures show:
+\begin{itemize}
+\item The large graph taking up the first two rows shows the relationship between the number of reactions
+(y-axis) and the algorithm runtime (x-axis) of every individual simulation repetition. The RPS value is 
+calculated from these two metrics, and is colour coded from red (bad RPS) to yellow (decent RPS) to 
+green (good RPS) relative for each unique alg \& model combination.
+
+\item The first smaller plot located in the bottom left plots the frequency distribution of RPS values.
+
+\item The second smaller plot located in the bottom center plots the frequency distribution of the number of reactions.
+
+\item The third smaller plot located in the bottom right plots the frequency distribution of the algorithm runtime.
+
+\end{itemize}
+
+\tableofcontents
+
+\BLOCK{ for method_name, figures in methods.items() }
+\section{\VAR{method_name}}
+\noindent
+\BLOCK{ for figure in figures }
+\includegraphics[width=\textwidth]{\VAR{figure}}
+\BLOCK{ endfor }
+\BLOCK{ endfor }
+\end{document}

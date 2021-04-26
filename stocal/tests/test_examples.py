@@ -188,5 +188,107 @@ class TestCombinators(unittest.TestCase):
             pass
 
 
+class TestBenchmarking(unittest.TestCase):
+    """Test benchmarking tool"""
+    from stocal.examples.benchmarking import DataStore
+
+    def setUp(self):
+        from tempfile import mkdtemp
+        self.tmpdir = mkdtemp(prefix='my_unit_tests_folder')
+        self.store = self.DataStore
+    
+    def test_run(self):
+        """Assert that run mode is executable"""
+        from argparse import Namespace
+        from stocal.algorithms import DirectMethod
+        from stocal.examples.dsmts.models import DSMTS_001_01
+        from stocal.examples.benchmarking import run_benchmarking
+
+        args = Namespace(
+            models=[DSMTS_001_01],
+            algo=[DirectMethod],
+            N=10,
+            cpu=1,
+            store=self.store
+        )
+        run_benchmarking(args)
+    
+    def test_run_many_algs(self):
+        """Assert that run mode is executable with many algorithms"""
+        from argparse import Namespace
+        from stocal.algorithms import DirectMethod, FirstReactionMethod, NextReactionMethod
+        from stocal.examples.dsmts.models import DSMTS_001_01
+        from stocal.examples.benchmarking import run_benchmarking
+
+        args = Namespace(
+            models=[DSMTS_001_01],
+            algo=[DirectMethod, FirstReactionMethod, NextReactionMethod],
+            N=10,
+            cpu=1,
+            store=self.store
+        )
+        run_benchmarking(args)
+
+    def test_run_many_models(self):
+        """Assert that run mode is executable with many models"""
+        from argparse import Namespace
+        from stocal.algorithms import DirectMethod
+        from stocal.examples.dsmts.models import DSMTS_001_01, DSMTS_001_03, DSMTS_001_04, DSMTS_001_05, DSMTS_001_07
+        from stocal.examples.benchmarking import run_benchmarking
+
+        args = Namespace(
+            models=[DSMTS_001_01, DSMTS_001_03, DSMTS_001_04, DSMTS_001_05, DSMTS_001_07], 
+            algo=[DirectMethod],
+            N=10,
+            cpu=1,
+            store=self.store
+        )
+        run_benchmarking(args)
+
+    def test_run_many_algs_many_models(self):
+        """Assert that run mode is executable with many models"""
+        from argparse import Namespace
+        from stocal.algorithms import DirectMethod, FirstReactionMethod, NextReactionMethod
+        from stocal.examples.dsmts.models import DSMTS_001_01, DSMTS_001_03, DSMTS_001_04, DSMTS_001_05, DSMTS_001_07
+        from stocal.examples.benchmarking import run_benchmarking
+
+        args = Namespace(
+            models=[DSMTS_001_01, DSMTS_001_03, DSMTS_001_04, DSMTS_001_05, DSMTS_001_07], 
+            algo=[DirectMethod, FirstReactionMethod, NextReactionMethod],
+            N=10,
+            cpu=1,
+            store=self.store
+        )
+        run_benchmarking(args)
+
+    def test_run_argument_ts(self):
+        """Assert that run mode is executable with the 'ts' argument which specifies a particular test suite (i.e. collection of models)"""
+        from argparse import Namespace
+        from stocal.algorithms import DirectMethod
+        from stocal.examples.benchmarking import run_benchmarking
+
+        args = Namespace(
+            ts=['DSMTS']
+            algo=[DirectMethod],
+            N=10,
+            cpu=1,
+            store=self.store
+        )
+        run_benchmarking(args)
+
+
+    def test_report(self):
+        """Assert that report mode is executable"""
+        from argparse import Namespace
+        from stocal.examples.benchmarking import report_benchmarking
+        
+        report_name = os.path.join(self.tmpdir, 'benchmarking.tex')
+        args = Namespace(reportfile=report_name, cpu=1, store=self.store)
+        self.test_run()
+        report_benchmarking(args)
+
+    
+
+
 if __name__ == '__main__':
     unittest.main()
