@@ -14,10 +14,10 @@ a = 2.
 b = 10.
 
 process = stocal.Process([
-    stocal.MassAction({}, {"x": 1}, a),
-    stocal.MassAction({"x": 2, "y": 1}, {"x": 3}, 1.),
-    stocal.MassAction({"x": 1}, {"y": 1, "c": 1}, b),
-    stocal.MassAction({"x": 1}, {"d": 1}, 1.),
+    stocal.MassAction({},               {"x": 1}, a),           #           --2-->  x
+    stocal.MassAction({"x": 2, "y": 1}, {"x": 3}, 1.),          # x + y     --1-->  3x
+    stocal.MassAction({"x": 1},         {"y": 1, "c": 1}, b),   # x         --10->  y + c
+    stocal.MassAction({"x": 1},         {"d": 1}, 1.),          # x         --1-->  d
 ])
 
 if __name__ == '__main__':

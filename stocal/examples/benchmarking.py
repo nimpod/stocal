@@ -36,15 +36,29 @@ except ImportError:
 
 console = Console()
 warnings.filterwarnings("ignore", category=Warning)     # ignore depreceation warnings because the warning messages about using AndersonMethod screws up console output
+details_debugmode3 = ' [bold white]Simulation [bold green]%s[bold white]/[bold green]%s [bold white]complete ([bold green]%s%s[bold white]) [bold red]%s [bold yellow]%s'
+details_debugmode4 = ' [bold white]Simulation [bold green]%s[bold white]/[bold green]%s [bold white]complete ([bold green]%s%s[bold white]) [bold red]%s [bold yellow]%s [bold black](%s, %ss, %s, %s, %s)'
+details_columns = "{:>100}".format('(RPS, runtime, #reactions, tmax, final_state)')
+
 
 def abbreviate_algo_name(algo_name):
-    """ converts name of algorithm to an abbreviated version (e.g. DirectMethod = DM) """
+    """ Converts name of algorithm to an abbreviated version (e.g. DirectMethod = DM) """
     return ''.join([c for c in algo_name if c.isupper() or c.isdigit()])
+
+def get_modelname_and_algoname_from_config(config):
+    """ Returns the model name & algorithm name as tuple, from a config file """
+    return (
+        str(config[0].__name__),
+        abbreviate_algo_name(str(config[1].__name__))
+    )
 
 def add_textbox(ax, text, pos):
     """ add a textbox to a matplotlib plot """
     ax.text(pos[0], pos[1], text, horizontalalignment="left", transform=ax.transAxes, bbox=dict(facecolor="white", alpha=0.6), fontsize=8)
     return ax
+
+def calcprogress(sim_count, sim_max):
+    return '{:.4f}'.format(round((sim_count/sim_max)*100, 4))
 
 
 
@@ -211,20 +225,19 @@ class DataStore(object):
             return pickle.load(fstats)
 
 
-def run_simulation(Model, Algorithm, max_steps=1000000):
+def run_simulation(Model, Algorithm):
     """Perform single simulation of Model using Algorithm.
 
     Returns the result of a single simulation run.
     """
-    
+
     def plot_trajectory(data):
-        """ little optional function to show a time vs. #molecules plot """
         plt.style.use('seaborn-poster')
         fig, ax = plt.subplots()
         
         time = data[0][0]
-        state = data[0][1]
-        for species,copy_numbers in state.items():
+        vals = data[0][1]
+        for species,copy_numbers in vals.items():
             ax.plot(time, copy_numbers, label=species, alpha=0.75)
         plt.title(Algorithm.__name__)
         plt.ticklabel_format(useOffset=False)
@@ -234,11 +247,10 @@ def run_simulation(Model, Algorithm, max_steps=1000000):
         add_textbox(ax, f"RPS={round(data[1],1)}\n runtime={round(data[2],3)}\n reactions={data[3]}\nspecies={len(data[4])}\n state={data[5]}", (-0.15,1.04))
         plt.show()
 
-    
     # setup model and algorithm
     model = Model()
     trajectory = Algorithm(model.process, model.initial_state, tmax=model.tmax)
-
+    
     # perform simulation
     time_before = time.perf_counter()
     result = model(trajectory)
@@ -246,16 +258,17 @@ def run_simulation(Model, Algorithm, max_steps=1000000):
 
     # measure performance
     runtime = time_after - time_before
-    rps = float(trajectory.step)/float(runtime)
-    unique_species = trajectory.state.keys()
+    num_of_reactions = trajectory.step
+    rps = float(num_of_reactions)/float(runtime)
+    num_of_unique_species = trajectory.state.keys()
     final_state = trajectory.state.values()
 
-    #plot_trajectory((result, rps, runtime, trajectory.step, unique_species, trajectory.state))
+    #plot_trajectory((result, rps, runtime, trajectory.step, num_of_unique_species, trajectory.state))
     
-    return (result, rps, runtime, trajectory.step, trajectory.state, unique_species, final_state, trajectory.time, model.tmax)
+    return (result, rps, runtime, num_of_reactions, trajectory.state, num_of_unique_species, final_state, trajectory.time, model.tmax)
 
 
-def run_in_process(queue, locks, store):
+def run_in_process(queue, locks, args):
     """Worker process for parallel execution of simulations.
     
     The worker continuously fetches a simulation configuration from
@@ -270,19 +283,25 @@ def run_in_process(queue, locks, store):
         try:
             result = run_simulation(*config)
         except Exception as exc:
-            logging.warning("Could not run simulation for %s", str(config))
-            logging.info(exc, exc_info=True)
+            print(f'Could not not run simulation for {str(config)} due to exception: {exc}')
 
         with locks[config]:
             try:
-                store.feed_result(result, config)
-                logging.debug("Stored result for %s", str(config))   
+                args.store.feed_result(result, config)
             except Exception as exc:
-                logging.warning("Could not store result for %s", str(config))
-                logging.info(exc, exc_info=True)
-
-    logging.debug("Worker finished")
+                print(f'Could not not store result for {str(config)} due to exception: {exc}')
+            
+            model_name, algo_name = get_modelname_and_algoname_from_config(config)
+            try:
+                rps, runtime, reactions, tmax, state = result[1], result[2], result[3], config[0].tmax, result[4]
+                if args.debugmode == 3:
+                    console.rule(' [bold white]Simulation complete [bold red]%s [bold yellow]%s' % (model_name, algo_name), align='left', style='black')
+                elif args.debugmode == 4:
+                    console.rule(' [bold white]Simulation complete [bold red]%s [bold yellow]%s [bold black](%s, %s, %s, %s, %s)' % (model_name, algo_name, rps, runtime, reactions, tmax, state), align='left', style='black')
+            except Exception as exc:
+                print(f'Could not access simulation result for {str(config)} due to exception: {exc}')
     
+    logging.debug(f'Worker finished', align='left', style='black')
 
 
 def run_benchmarking(args):
@@ -298,18 +317,6 @@ def run_benchmarking(args):
     in parallel.
     """
 
-    def add_result(config, args):
-        """ run a simulation and add result to datastore """
-        try:
-            result = run_simulation(*config)
-            args.store.feed_result(result, config)
-            return result
-        except Exception as exc:
-            logging.warning("Could not run simulation for %s", str(config))
-            logging.info(exc, exc_info=True)
-        
-        return None        
-
     def get_implementations(module, cls):
         return [
             member for member in module.__dict__.values()
@@ -319,8 +326,7 @@ def run_benchmarking(args):
         ]
 
     def configurations(N):
-        """generate required simulation configurations
-        """
+        """ generate required simulation configurations """
         import random
         required = {
             config: (max(0, N-args.store.get_stats(config).runs)
@@ -335,70 +341,106 @@ def run_benchmarking(args):
             if not required[next_config]:
                 configs.remove(next_config)
             yield next_config
-    
-    def choose_debug_mode_for_parallel(args, config, sim_count, sim_max, result=None):
-        """Different modes for viewing simulation progression/metainfo in the console, if parallel processing is being used...
-        	1: show numerical progression (default)
-			3: show details of each simulation
-			4: show nothing
-        """
-        
-        model_name = str(config[0].__name__)
-        algo_name = abbreviate_algo_name(str(config[1].__name__))
 
-        if args.debugmode == 3:
-            if result is None:
-                console.rule(f' [bold white]simulation [bold green]{str(sim_count)}[bold white]/[bold green]{str(sim_max)} [bold white]complete ([bold green]{calcprogress(sim_count, sim_max)}%[bold white]) [bold red]{model_name} [bold yellow]{algo_name}', align='left', style='black')
-            else:
-                console.rule(f' [bold white]simulation [bold green]{str(sim_count)}[bold white]/[bold green]{str(sim_max)} [bold white]complete ([bold green]{calcprogress(sim_count, sim_max)}%[bold white]) [bold red]{model_name} [bold yellow]{algo_name} [bold black]({result[1]}, {result[2]}, {result[3]}, {result[4]}, {config[0].tmax})', align='left', style='black')
+    def run_sequential(sim_count, sim_max):
+        """ Function to execute simulations sequentially
         
-        elif args.debugmode == 4:
-            pass
-        
-        else:   # default if no debugmode is specified
-            sys.stdout.write(f'{sim_count}/{sim_max} ({calcprogress(sim_count, sim_max)}%)\r')
+        Creates simulation configuration file for each
+        algorithm & model combination. Runs the simulation,
+        and feeds the simulation result to the DataStore.
 
-    def choose_debug_mode_for_nonparallel(args, sim_count, sim_max):
-        """Different modes for viewing simulation progression/metainfo in the console, if parallel processing isn't being used...
-        	1: show numerical progression (default)
-			2: show progress bar
-			3: show details of each simulation
-			4: show nothing
+        There are different debugmodes (i.e. different ways
+        of viewing details about the ongoing simulations):
+            1: Numerical progress
+            2: Progress bar
+            3: Details about each simulation
+            4: More details about each simulation
+            5: Show nothing
         """
+
+        def add_result(config, args, result=None):
+            """ run simulation and add result to datastore """
+            try:
+                if result is None:
+                    result = run_simulation(*config)
+                    args.store.feed_result(result, config)
+                else:
+                    args.store.feed_result(result, config)
+                return result
+            except Exception as exc:
+                print(f'Could not run simulation for {str(config)} due to exception: {exc}')
+            return None
         
         if args.debugmode == 2:
-            with tqdm(total=sim_max, unit="simulation", leave=True, ncols=150, bar_format="%s{desc}%s{percentage:0.4f}%s%s{bar}%s{r_bar}" % (Fore.CYAN, Fore.LIGHTGREEN_EX, '%|', Fore.LIGHTGREEN_EX, Fore.CYAN)) as progressbar:
-                for config in configurations(args.N):
-                    progressbar.set_description('{desc: <35}'.format(desc='Simulating %s using %s' % (config[0].__name__, abbreviate_algo_name(config[1].__name__))))          
-                    add_result(config, args)
-                    sim_count += 1
-                    progressbar.update(1)
-                progressbar.close()
-
-        elif args.debugmode == 3:
-            console.rule(f'                                                        [bold black](rps, runtime, reactions, simulated_time, tmax, final_state)', align='left', style='black')
-            with console.status(f"[bold green] Running next simulation... ", spinner='line') as status:
-                for config in configurations(args.N):
-                    result = add_result(config, args)
-                    sim_count += 1
-                    if result is None:
-                        console.rule(f' [bold white]Simulation [bold green]{str(sim_count)}[bold white]/[bold green]{str(sim_max)} [bold white]complete ([bold green]{calcprogress(sim_count, sim_max)}%[bold white]) [bold red]{str(config[0].__name__)} [bold yellow]{abbreviate_algo_name(str(config[1].__name__))}', align='left', style='black')
-                    else:
-                        console.rule(f' [bold white]Simulation [bold green]{str(sim_count)}[bold white]/[bold green]{str(sim_max)} [bold white]complete ([bold green]{calcprogress(sim_count, sim_max)}%[bold white]) [bold red]{str(config[0].__name__)} [bold yellow]{abbreviate_algo_name(str(config[1].__name__))} [bold black]({result[1]}, {result[2]}s, {result[3]}, {result[7]}s, {config[0].tmax}s, {result[4]})', align='left', style='black')
-
-        elif args.debugmode == 4:
-            for config in configurations(args.N):
-                add_result(config, args)
+            progressbar = tqdm(total=sim_max, unit="simulation", leave=True, ncols=150, bar_format="%s{desc}%s{percentage:0.4f}%s%s{bar}%s{r_bar}" % (Fore.CYAN, Fore.LIGHTGREEN_EX, '%|', Fore.LIGHTGREEN_EX, Fore.CYAN))
+        if args.debugmode == 4:
+            print(details_columns)
         
-        else:   # default if no debugmode is specified
-            for config in configurations(args.N):
+        for config in configurations(args.N):
+            model_name, algo_name = get_modelname_and_algoname_from_config(config)
+
+            # Run simulation, and add result to DataStore... using a specific debugmode
+            if args.debugmode == 2:
+                progressbar.set_description('{desc: <38}'.format(desc='Simulating %s using %s' % (model_name, algo_name)))
                 add_result(config, args)
                 sim_count += 1
-                sys.stdout.write(f'{sim_count}/{sim_max} ({calcprogress(sim_count, sim_max)}%)\r')
+                progressbar.update(1)
+            elif args.debugmode == 3:
+                with console.status(f"[bold green] Running next simulation... ", spinner='line') as status:
+                    add_result(config, args)
+                    sim_count += 1
+                    console.rule(details_debugmode3 % (str(sim_count), sim_max, calcprogress(sim_count, sim_max), '%', model_name, algo_name), align='left', style='black')
+            elif args.debugmode == 4:
+                with console.status(f"[bold green] Running next simulation... ", spinner='line') as status:
+                    result = add_result(config, args)
+                    sim_count += 1
+                    try:
+                        rps, runtime, reactions, tmax, finalstate = result[1], result[2], result[3], config[0].tmax, result[4]
+                        console.rule(details_debugmode4 % (str(sim_count), sim_max, calcprogress(sim_count, sim_max), '%', model_name, algo_name, rps, runtime, reactions, tmax, finalstate), align='left', style='black')
+                    except Exception as exc:
+                        console.rule(details_debugmode3 % (str(sim_count), sim_max, calcprogress(sim_count, sim_max), '%', model_name, algo_name), align='left', style='black')
+            elif args.debugmode == 5:
+                add_result(config, args)
+            else:
+                add_result(config, args)
+                sim_count += 1
+                sys.stdout.write(f'{sim_count}/{sim_max} ({calcprogress(sim_count, sim_max)}%) \r')
+       
+        if args.debugmode == 2:
+            progressbar.close()
 
-    def calcprogress(sim_count, sim_max):
-        return '{:.4f}'.format(round((sim_count/sim_max)*100, 4))
-
+    def run_parallel(sim_count, sim_max):
+        """ Function that prepares to execute simulations parallely
+        
+        Creates a queue of simulation processes, which is sent to the
+        run_in_process function
+        """
+        
+        queue = Queue(maxsize=args.cpu)
+        locks = {
+            config: Lock()
+            for config in product(args.models, args.algo)
+        }
+        processes = [Process(target=run_in_process, args=(queue, locks, args)) for _ in range(args.cpu)]
+        for proc in processes:
+            proc.start()
+            console.rule(f'Started {proc}', align='left', style='black')
+        console.rule(f'{args.cpu} processes started.', align='left', style='black')
+        if args.debugmode == 4:
+            print(details_columns)
+        for config in configurations(args.N):
+            queue.put(config)
+            sim_count += 1
+            sys.stdout.write(f'Started {sim_count} simulations out of {sim_max} ({calcprogress(sim_count, sim_max)}%) \r')
+        console.rule(f'All jobs requested', align='left', style='black')
+        for _ in processes:
+            queue.put(None)
+            console.rule(f'Shutdown signal sent', align='left', style='black')
+        queue.close()
+        for proc in processes:
+            console.rule(f'Waiting for {proc}', align='left', style='black')
+            proc.join()
+    
     # collect algorithms to benchmark
     if not args.algo:
         from stocal import algorithms
@@ -421,45 +463,24 @@ def run_benchmarking(args):
             elif args.ts.upper() == 'ALL':
                 args.models = get_implementations(mmts, mmts.MMTS_Test) + get_implementations(dsmts, dsmts.DSMTS_Test)
 
-
     sim_count = 0
     sim_max = args.N * len(args.models) * len(args.algo)
-
-    # perform simulations in parallel if args.cpu > 1, otherwise just run the simulation normally
+    
     if args.cpu > 1:
-        queue = Queue(maxsize=args.cpu)
-        locks = {
-            config: Lock()
-            for config in product(args.models, args.algo)
-        }
-        processes = [Process(target=run_in_process, args=(queue, locks, args.store)) for _ in range(args.cpu)]
-        for proc in processes:
-            proc.start()
-        logging.debug("%d processes started." % args.cpu)
-        for config in configurations(args.N):
-            queue.put(config)
-            sim_count += 1
-            choose_debug_mode_for_parallel(args, config, sim_count, sim_max)
-        logging.debug("All jobs requested.")
-        for _ in processes:
-            queue.put(None)
-            logging.debug("Shutdown signal sent.")
-        queue.close()
-        for proc in processes:
-            print(f"Waiting for {proc}")
-            proc.join()
+        run_parallel(sim_count, sim_max)
     else:
-        choose_debug_mode_for_nonparallel(args, sim_count, sim_max)
-    logging.debug("Done.")
+        run_sequential(sim_count, sim_max)
+    
+    console.rule(f'Done', align='left', style='black')
 
 
 def report_benchmarking(args, frmt='png', template='doc/benchmarking.tex'):
     """ Generate results from benchmarking data. 
     
     These results include:
-     Figures for each .dat file,
+     Figures for each config file,
      LaTeX report that collates all these figures,
-     Comparison of algorithm performance on a per model basis) 
+     Comparison of algorithm performance on a per model basis
     """
 
     def camel_case_split(identifier):
@@ -579,8 +600,8 @@ def generate_final_results(args, stats, data_rows):
     """ Generate final results from the benchmarking data """
 
     plt.style.use('default')     # (default, ggplot, classic, bmh, fast, fivethirtyeight, seaborn, seaborn-bright, seaborn-dark, seaborn-poster, seaborn-pastel) 
-    algcolors = ['r', 'g', 'b', 'c', 'm', 'y'] + [mcolors.CSS4_COLORS[name] for name in ['lightcoral', 'limegreen', 'cornflowerblue', 'plum', 'orange', 'aquamarine']]
-    fpath = default_store
+    algcolors = [mcolors.CSS4_COLORS[name] for name in ['turquoise', 'lime', 'orange', 'cornflowerblue', 'plum', 'lightcoral']]
+    fpath = default_store       # 'benchmarking_data\\heteropolymer\\test'
     
     def barchart1(fname, models, algs, data):
         """ plot the performance of each algorithm, averaged across all models """
@@ -625,8 +646,10 @@ def generate_final_results(args, stats, data_rows):
             plt.savefig('%s\\%s.png' % (fpath, fname))
             plt.close()
 
-    def barcharts(fname, models, algs, data):
+    def barchart_per_model(fname, models, algs, data):
         """make individual barcharts for each model, showing the performance each alg achieved with error bar"""
+        
+        metrics = ['RPS']
 
         if len(algs) > 1:
             for model_name,v in data.items():
@@ -641,7 +664,7 @@ def generate_final_results(args, stats, data_rows):
                 plt.xticks(rotation="0", fontsize=9)
                 plt.yticks(fontsize=9)
                 #plt.tight_layout()
-                plt.savefig('%s\\xxx%s%s.png' % (fpath, model_name, fname))
+                plt.savefig('%s\\xxx%s%s%s.png' % (fpath, model_name, fname, metrics[0]))
                 plt.close()
 
     def scatterplot(fname, models, algs, data):
@@ -726,70 +749,163 @@ def generate_final_results(args, stats, data_rows):
                 plt.savefig('%s\\%s-%s.png' % (fpath, fname, metrics[i]))
                 plt.close()
     
-    def boxplots(fname, models, algs):
+    def boxplot_per_model(fname, models, algs, one_figure, sort_by_performance):
         """ Make boxplots for each performance metric, showing how spread the values are for each algorithm against a particular model """
-        
+            
         seaborn.set(style='whitegrid')
         
-        metrics = ['RPS', 'Number of reactions', 'Algorithm runtime', 'Number of unique species']
+        metrics = ['RPS', 'Reactions', 'Runtime', 'Species']
         data = [[], [], [], []]
         locations = [(121), (322), (324), (326)]
+        orientations = ['v', 'h', 'h', 'h'] if one_figure else ['v', 'v', 'v', 'v']
         algcolors_crop = algcolors[:len(algs)]
         
         for model in models:
-            fig,ax = plt.subplots(figsize=(19,10))
+            if one_figure:
+                fig,ax = plt.subplots(figsize=(19,10))
+            
             [d.clear() for d in data]
 
             # find data for this model
             for f,stats in args.store:
                 if stats and stats.config[0].__name__ == model:
-                    fig.suptitle('Performance metrics - %s - (%s samples for each alg)' % (stats.config[0].__name__, stats.runs), fontsize=14)
+                    if one_figure:
+                        fig.suptitle('Performance metrics - %s - (%s samples for each alg)' % (stats.config[0].__name__, stats.runs), fontsize=14)
                     if len(data[0]) < len(algs):
                         data[0].append([arr for arr in stats.rps])
                         data[1].append([arr for arr in stats.reactions])
                         data[2].append([arr for arr in stats.runtime])
                         data[3].append([arr for arr in stats.unique_species_len])
-
+            
             # generate 1 plot for each metric
-            for loc, metric, dt in zip(locations, metrics, data):
+            for loc, metric, dt, ori in zip(locations, metrics, data, orientations):
                 df = pandas.DataFrame({'Alg': algs, 'Values': dt, 'Mean': float(0), 'Color': algcolors_crop})
+
+                # compute mean values and put into the dataframe
                 for i in range(len(dt)):
                     df.at[i, 'Mean'] = np.mean(dt[i])
-                df = df.sort_values(by=['Mean'])
-                orderedcolors = df['Color'].to_list()
                 
-                plt.subplot(loc)
+                # sort the dataframe by the algs mean performance
+                if sort_by_performance:
+                    df = df.sort_values(by=['Mean'])
+                
+                if one_figure:
+                    plt.subplot(loc)
+                else:
+                    fig = plt.figure(figsize=(3,13))
+
                 categories = df['Alg'].to_list()
                 vals = df['Values'].to_list()
-
+                orderedcolors = df['Color'].to_list()
+                
                 if metric == 'RPS':
-                    seaborn.boxplot(data=vals, orient='v', palette=df.Color, width=0.7)
+                    seaborn.boxplot(data=vals, orient=ori, palette=df.Color, width=0.85, linewidth=1.4)
                     plt.xticks(np.arange(len(categories)), categories)
-
-                elif metric == 'Number of reactions':
-                    seaborn.boxplot(data=vals, orient='h', palette=df.Color, width=0.7)
-                    plt.yticks(np.arange(len(categories)), categories)
-
-                elif metric == 'Algorithm runtime':
-                    seaborn.boxplot(data=vals, orient='h', palette=df.Color, width=0.7)
-                    plt.yticks(np.arange(len(categories)), categories)
-
-                elif metric == 'Number of unique species':
+                    if one_figure is False:
+                        plt.ylim(0, 15000)
+                elif metric == 'Reactions':
+                    seaborn.boxplot(data=vals, orient=ori, palette=df.Color, width=0.85, linewidth=1.4)
+                    if one_figure is False:
+                        plt.xticks(np.arange(len(categories)), categories)
+                        plt.ylim(0, 500000)
+                    else:
+                        plt.yticks(np.arange(len(categories)), categories)
+                elif metric == 'Runtime':
+                    seaborn.boxplot(data=vals, orient=ori, palette=df.Color, width=0.85, linewidth=1.4)
+                    if one_figure is False:
+                        plt.xticks(np.arange(len(categories)), categories)
+                        plt.ylim(0, 2000)
+                    else:
+                        plt.yticks(np.arange(len(categories)), categories)
+                elif metric == 'Species':
                     df = df.explode('Values')
                     df['Values'] = df['Values'].astype('float')
-                    seaborn.barplot(data=vals, orient='h', palette=orderedcolors)
-                    plt.yticks(np.arange(len(categories)), categories)
+                    seaborn.barplot(data=vals, orient=ori, palette=orderedcolors)
+                    if one_figure is False:
+                        plt.xticks(np.arange(len(categories)), categories)
+                        plt.ylim(0, 10)
+                    else:
+                        plt.yticks(np.arange(len(categories)), categories)
                 
-                plt.xticks(fontsize=10)
-                plt.yticks(fontsize=10)
                 plt.xlabel('')
                 plt.ylabel('')
-                plt.title(metric, fontsize=13)
+                
+                if one_figure:
+                    plt.xticks(fontsize=11)
+                    plt.yticks(fontsize=11)
+                    plt.title(metric, fontsize=13)
+                else:
+                    seaborn.despine(offset=10, trim=True)
+                    plt.xticks([])
+                    plt.yticks(fontsize=5)
+                    plt.savefig('%s\\xxx%s%s%s.png' % (fpath, model, fname, metric))
+                    plt.close()
 
-            ax.xaxis.grid(True)
-            plt.tight_layout()
-            plt.subplots_adjust(top=0.90, wspace=0.10, hspace=0.30)
-            plt.savefig('%s\\xxx%s%s.png' % (fpath, model, fname))
+            if one_figure:
+                ax.xaxis.grid(True)
+                plt.tight_layout()
+                plt.subplots_adjust(top=0.90, wspace=0.10, hspace=0.30)
+                plt.savefig('%s\\xxx%s%s.png' % (fpath, model, fname))
+            plt.close()
+
+    def barchartstemp(fname, models, algs, sort_by_performance):        
+        """ make individual barcharts for each model, showing the performance each alg achieved with error bar """
+        
+        seaborn.set_style('whitegrid', {'grid.color': 'lightgrey', 'grid.linestyle': '-', 'xtick.major.size': 5, 'ytick.major.size': 5})
+
+        metrics = ['RPS', 'Reactions', 'Runtime', 'Species']
+        data = [[], [], [], []]
+        locations = [(121), (322), (324), (326)]
+        algcolors_crop = algcolors[:len(algs)]
+        
+        for model in models:            
+            [d.clear() for d in data]
+
+            # find data for this model
+            for f,stats in args.store:
+                if stats and stats.config[0].__name__ == model:
+                    if len(data[0]) < len(algs):
+                        data[0].append([arr for arr in stats.rps])
+                        data[1].append([arr for arr in stats.reactions])
+                        data[2].append([arr for arr in stats.runtime])
+                        data[3].append([arr for arr in stats.unique_species_len])
+            
+            # generate 1 plot for each metric
+            for loc, metric, dt in zip(locations, metrics, data):
+                df = pandas.DataFrame({'Alg': algs, 'Values': dt, 'Mean': float(0), 'Stdev': float(0), 'Color': algcolors_crop})
+
+                # compute mean values and put into the dataframe
+                for i in range(len(dt)):
+                    df.at[i, 'Mean'] = np.mean(dt[i])
+                    df.at[i, 'Stdev'] = np.std(dt[i])
+                
+                # sort the dataframe by the algs mean performance
+                if sort_by_performance:
+                    df = df.sort_values(by=['Mean'])
+                
+                fig = plt.figure(figsize=(4,10))
+                
+                if metric == 'RPS':
+                    plt.bar(df.Alg, df.Mean, yerr=df.Stdev, color=df.Color, alpha=0.65, capsize=0)
+                    plt.ylim(0, 6000)
+                elif metric == 'Reactions':
+                    plt.bar(df.Alg, df.Mean, yerr=df.Stdev, color=df.Color, alpha=0.65, capsize=0)
+                    plt.ylim(0, 2500000)
+                elif metric == 'Runtime':
+                    plt.bar(df.Alg, df.Mean, yerr=df.Stdev, color=df.Color, alpha=0.65, capsize=0)
+                    plt.ylim(0, 20000)
+                elif metric == 'Species':
+                    plt.bar(df.Alg, df.Mean, yerr=df.Stdev, color=df.Color, alpha=0.65, capsize=0)
+                    plt.ylim(0, 11)
+                
+                plt.xlabel('alpha = 1.e-9', fontsize=12)
+                plt.ylabel(metric, fontsize=10)
+                plt.yticks(fontsize=10)
+                plt.xticks(rotation="0", fontsize=10)
+                plt.tight_layout()
+                plt.savefig('%s\\xxx%s%s%s.png' % (fpath, model, fname, metric))
+                plt.close()
+                
             plt.close()
 
     def algrankings(fname, models, algs, data):
@@ -840,13 +956,20 @@ def generate_final_results(args, stats, data_rows):
         data_grouped_by_alg[alg][2] = runtime_values[a:a+len(models)]
         a += len(models)
     
-    # ------ MAKE PLOTS ------
-    barchart1('xxxEveryModel-PerformanceOfEachAlg', models, algs, data_grouped_by_alg)
-    barchart2('xxxAlgModelCombinations', models, algs)
-    #barcharts('-PerformanceRPS', models, algs, data_grouped_by_model)
-    boxplots('-PerformanceMetrics', models, algs)
+    ''' ------ MAKE PLOTS ------ '''
+    # create barchart showing alg performance per model
+    barchart_per_model('-AlgPerformance', models, algs, data_grouped_by_model)
+    
+    # create boxplot showing alg performance per model, shows equivilant data to the barchart above, but includes outliers and indicates spread
+    boxplot_per_model('-AlgPerformance', models, algs, one_figure=True, sort_by_performance=True)
+
+    # create scatter plot of algorithm performance profiles
     scatterplot('xxxScatters', models, algs, data_grouped_by_model)
+
+    # create heatmaps
     heatmap('xxxHeatMap', models, algs, data_grouped_by_alg)
+
+    # rank the algorithms by their performance
     algrankings('xxxAlgRankings', models, algs, data_grouped_by_model)
 
 
@@ -966,7 +1089,7 @@ if __name__ == "__main__":
     parser_run.add_argument('--algo', type=import_by_name, action='append', help='specify algorithm to be benchmarked')
     parser_run.add_argument('--model', type=import_by_name, action='append', dest='models', help='specify model to be benchmarked')
     parser_run.add_argument('--cpu', metavar='N', type=int, default=1, help='number of parallel processes')
-    parser_run.add_argument('--debugmode', type=int, default=1, choices=[1,2,3,4], help='see different info during simulation')
+    parser_run.add_argument('--debugmode', type=int, default=1, choices=[1,2,3,4,5], help='see different info during simulation')
     parser_run.set_defaults(func=run_benchmarking)
 
     # parser for the "report" command

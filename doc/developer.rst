@@ -90,15 +90,6 @@ The benchmarking suite operates in two modes: {run,report}
 	To run the benchmarking on all algorithms against all models for N simulations, call:
 		$ python stocal/examples/benchmarking.py run N
 
-	Any combination of algorithms and models can be benchmarked:
-		$ python stocal/examples/benchmarking.py run --model stocal.examples.dsmts.models.DSMTS_001_01 N
-		$ python stocal/examples/benchmarking.py run --model stocal.examples.dsmts.models.DSMTS_001_01 --model stocal.examples.dsmts.models.DSMTS_001_03 N
-		$ python stocal/examples/benchmarking.py run --model stocal.examples.dsmts.models.DSMTS_001_01 --model stocal.examples.dsmts.models.DSMTS_001_03 --model stocal.examples.dsmts.models.DSMTS_001_05 N
-		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod N
-		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod --algo stocal.algorithms.FirstReactionMethod N
-		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod --algo stocal.algorithms.FirstReactionMethod --algo stocal.algorithms.NextReactionMethod N
-		$ python stocal/examples/benchmarking.py run --algo stocal.algorithms.DirectMethod --algo stocal.algorithms.FirstReactionMethod --model stocal.examples.dsmts.models.DSMTS_001_01 --model stocal.examples.dsmts.models.DSMTS_001_03 N
-
 	Optional arguments:
 		--ts {...} allows the user to specify a test suite, pulling all the models from that test suite into their analysis
 			DSMTS: only use models from the DSMTS module

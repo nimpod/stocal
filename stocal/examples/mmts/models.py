@@ -67,10 +67,16 @@ class MMTS_Test(with_metaclass(abc.ABCMeta, object)):
 class heteropolymer(MMTS_Test):
     import stocal.examples.pre2017 as pre2017
 
-    MMTS_Test.tmax = 500            # [50, 100, 500, 1000]
-    alpha = pre2017.alpha = 1.e-7       # [1.e-10, 1.e-9, 1.e-8, 1.e-7, 1.e-6, 1.e-5, 1.e-4, 1.e-3]
-    beta = pre2017.beta = 1000**-2       # [10000**-2, 1000**-2, 100**-2]    
-    initial_state = pre2017.initial_state = {c: 3000 for c in 'ab'}     # [1000, 2100, 3000, 5000, 10000, 20000, 50000, 100000, 2000000]
+    # high default max simulation time
+    MMTS_Test.tmax = 100                # [50, 100, 500, 1000]
+
+    # default low alpha and low beta
+    alpha = pre2017.alpha = 1.e-9       # [1.e-10, 1.e-9, 1.e-8, 1.e-7, 1.e-6, 1.e-5, 1.e-4, 1.e-3]
+    beta = pre2017.beta = 1000**-2             # [10000**-2, 1000**-2, 100**-2]
+    
+    # low default initial state
+    initial_state = pre2017.initial_state = {c: 10000 for c in 'ab'}     # [1000, 2100, 3000, 5000, 10000, 20000, 50000, 100000, 2000000]
+    
     process = pre2017.process
     species = [s for s in pre2017.initial_state]
 
